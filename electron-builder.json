@@ -1,0 +1,45 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.paaswiver.app",
+  "productName": "PAAS WIVER",
+  "directories": {
+    "output": "release",
+    "buildResources": "app_icon"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "app_icon/**/*",
+    "package.json",
+    "!node_modules/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "app_icon",
+      "to": "app_icon"
+    }
+  ],
+  "asar": true,
+  "win": {
+    "icon": "app_icon/icon.ico",
+    "target": [
+      {
+        "target": "dir",
+        "arch": [
+          "x64"
+        ]
+      },
+      {
+        "target": "portable",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "portable": {
+    "artifactName": "PAAS-WIVER-Portable.exe",
+    "requestExecutionLevel": "user",
+    "unpackDirName": "PAAS-WIVER-Runtime"
+  }
+}

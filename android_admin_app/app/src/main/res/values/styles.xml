@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="PaasWiverAdminTheme" parent="@android:style/Theme.DeviceDefault">
+        <item name="android:colorBackground">#0B0F17</item>
+        <item name="android:windowBackground">#0B0F17</item>
+        <item name="android:statusBarColor">#111827</item>
+        <item name="android:navigationBarColor">#0B0F17</item>
+    </style>
+</resources>

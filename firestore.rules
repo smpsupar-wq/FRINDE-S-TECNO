@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ── Global Safety Net ───────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ── Global Hardened Helpers ─────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isVerifiedBootstrapAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'tecnofrindes@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        isVerifiedBootstrapAdmin() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // ── License Validation Blueprint ────────────────────────────────────────
+    function isValidLicense(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'ownerUid', 'username', 'role', 'status',
+          'trialGranted', 'expiresAt', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid', 'ownerUid', 'username', 'role', 'status',
+          'trialGranted', 'expiresAt', 'createdAt', 'updatedAt'
+        ]) &&
+        data.uid is string && data.uid == userId && data.uid.size() <= 128 &&
+        data.ownerUid is string && data.ownerUid == userId && data.ownerUid.size() <= 128 &&
+        data.username is string && data.username.size() >= 2 && data.username.size() <= 40 &&
+        data.username.matches('^[a-zA-Z0-9_.-]+$') &&
+        data.role in ['user', 'admin'] &&
+        data.status in ['trial', 'active', 'expired'] &&
+        data.trialGranted is bool &&
+        data.expiresAt is timestamp &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isSelfTrialCreate(userId, data) {
+      return request.auth.uid == userId &&
+        data.ownerUid == request.auth.uid &&
+        data.role == 'user' &&
+        data.status == 'trial' &&
+        data.trialGranted == true &&
+        data.createdAt == request.time &&
+        data.updatedAt == request.time &&
+        data.expiresAt <= request.time + duration.value(11, 'm');
+    }
+
+    function isUserHeartbeatUpdate(userId, data, oldData) {
+      return request.auth.uid == userId &&
+        data.uid == oldData.uid &&
+        data.ownerUid == oldData.ownerUid &&
+        data.username == oldData.username &&
+        data.role == oldData.role &&
+        data.trialGranted == oldData.trialGranted &&
+        data.expiresAt == oldData.expiresAt &&
+        data.createdAt == oldData.createdAt &&
+        data.updatedAt == request.time &&
+        data.diff(oldData).affectedKeys().hasOnly(['updatedAt', 'status']) &&
+        (data.status == oldData.status || (data.status == 'expired' && request.time >= oldData.expiresAt));
+    }
+
+    // ── /licenses/{userId} ──────────────────────────────────────────────────
+    match /licenses/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (
+        request.auth.uid == userId || isAdmin()
+      );
+      allow list: if isAdmin();
+
+      allow create: if isSignedIn() && isValidId(userId) &&
+        isValidLicense(incoming(), userId) && (
+          (isAdmin() && incoming().createdAt == request.time && incoming().updatedAt == request.time) ||
+          isSelfTrialCreate(userId, incoming())
+        );
+
+      allow update: if isSignedIn() && isValidId(userId) &&
+        isValidLicense(incoming(), userId) && (
+          (isAdmin() &&
+            incoming().uid == existing().uid &&
+            incoming().ownerUid == existing().ownerUid &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['username', 'role', 'status', 'trialGranted', 'expiresAt', 'updatedAt'])) ||
+          isUserHeartbeatUpdate(userId, incoming(), existing())
+        );
+
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // ── /admins/{adminUid} ──────────────────────────────────────────────────
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (
+        request.auth.uid == adminUid || isAdmin()
+      );
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && isValidId(adminUid) &&
+        isVerifiedBootstrapAdmin() &&
+        request.auth.uid == adminUid &&
+        incoming().keys().hasAll(['uid', 'email', 'createdAt']) &&
+        incoming().keys().hasOnly(['uid', 'email', 'createdAt']) &&
+        incoming().uid == adminUid &&
+        incoming().email is string && incoming().email.size() <= 160 &&
+        incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // ── /test/{docId} ───────────────────────────────────────────────────────
+    match /test/{docId} {
+      allow get: if isValidId(docId) && docId == 'connection';
+      allow list, write: if false;
+    }
+  }
+}
